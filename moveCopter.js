@@ -10,12 +10,15 @@ for (var i=0; i < devices.length; i++) {
     }
 }
 if ( numHIDs < 2 ) {
-    console.log('No motion controllers found. Exiting');
+    console.log('Not enough motion controllers found ('+numHIDs+'). Exiting');
     process.exit();
 }
 
 var hid1 = new hid.HID(hidDevices[0]);
 var hid2 = new hid.HID(hidDevices[1]);
+
+var readingHid1 = true;
+var readingHid2 = true;
 
 var drone = require('ar-drone');
 var droneControl = drone.createUdpControl();
@@ -25,12 +28,21 @@ var droneRef = {};
 // The command object to send to the drone.
 var droneComm = {};
 
+sendDroneCommands = false;
 // Initialise drone, with reset from emergency.
 droneRef.emergency = true;
 droneRef.fly = false;
+updateDrone();
 
-// Remove emergency reset.
-setTimeout(function(){droneRef.emergency = false;},1000);
+// Remove emergency reset and start autoupdates.
+setTimeout(function(){
+    droneRef.emergency = false;
+    updateDrone();
+    sendDroneCommands = true;
+},1000);
+
+// Both 'move' buttons need to be pressed to launch the drone.
+var launchStatus = [0,0];
 
 function processHid1(data) {
 
@@ -38,8 +50,8 @@ function processHid1(data) {
     if (droneRef.fly == false){
        set_led(hid1,0x00,0x99,0x00)
     }else{
-        //Turn off if we're flying
-        set_led(hid1,0x00,0x00,0x00)
+        //Blue if we're flying
+        set_led(hid1,0x00,0x00,0x99)
     }
 
     // Start and select buttons - held together exits the app
@@ -58,18 +70,25 @@ function processHid1(data) {
     var minYaw = 111;
 
     if ( startSelect == 9 ) {
-        process.exit()
+        // Exit process cleanly.
+        cleanUp();
     }
 
     if ( triggerBin > 1 && triggerBin < 16 && droneRef.fly == false ) {
 //        console.log('take off');
-        droneRef.fly = true;
-    } else if ( triggerBin >= 16 && droneRef.fly == true ) {
+        launchStatus[0] = 1;
+        if (launchStatus[1] == 1) {
+            droneRef.fly = true;
+        }
+    } else {
+        launchStatus[0] = 0;
+        if ( triggerBin >= 16 && droneRef.fly == true ) {
 //        console.log('land');
-        droneRef.fly = false;
-    } else if ( triggerBin == 1 ) {
-        droneControl.animateLeds('blinkGreenRed',5,2);
-        droneControl.flush();
+            droneRef.fly = false;
+        } else if ( triggerBin == 1 ) {
+            droneControl.animateLeds('blinkGreenRed',5,2);
+            droneControl.flush();
+        }
     }
 
     var rangeElevation = maxElevation - minElevation;
@@ -120,8 +139,8 @@ function processHid2 (data) {
     if (droneRef.fly == false){
        set_led(hid2,0x99,0x00,0x00)
     }else{
-        //Turn off if we're flying
-        set_led(hid2,0x00,0x00,0x00)
+        //Blue if we're flying
+        set_led(hid2,0x00,0x00,0x99)
     }
 
     // Start and select buttons - held together exits the app
@@ -132,6 +151,23 @@ function processHid2 (data) {
     var pitch = (data[16] + data[22]) / 2;
     // Roll control based on x-gyro.
     var roll = (data[14] + data[20]) / 2;
+
+    if ( triggerBin > 1 && triggerBin < 16 && droneRef.fly == false ) {
+//        console.log('take off');
+        launchStatus[1] = 1;
+        if (launchStatus[0] == 1) {
+            droneRef.fly = true;
+        }
+    } else {
+        launchStatus[1] = 0;
+        if ( triggerBin >= 16 && droneRef.fly == true ) {
+//        console.log('land');
+            droneRef.fly = false;
+        } else if ( triggerBin == 1 ) {
+            droneControl.animateLeds('blinkGreenRed',5,2);
+            droneControl.flush();
+        }
+    }
 
     // Calibration constants
     var maxPitch = 145;
@@ -184,27 +220,37 @@ function processHid2 (data) {
 }
 
 function readHid1() {
-    hid1.read(function(err,dat){processHid1(dat);readHid1();});
+    hid1.read(function(err,dat){processHid1(dat);if(readingHid1){readHid1();}});
 }
 
 function readHid2() {
-    hid2.read(function(err,dat){processHid2(dat);readHid2();});
+    hid2.read(function(err,dat){processHid2(dat);if(readingHid2){readHid2();}});
 }
 
 // Start reading controller 1 - subsequent reads by callback.
 // Controls elevation.
-readHid1();
+if (readingHid1) {
+    readHid1();
+}
 
 // Start reading controller 2 - subsequent reads by callback.
 // Controls roll, yaw and pitch
-readHid2();
+if (readingHid2) {
+    readHid2();
+}
 
 // Sends command packets to the drone every 30 milliseconds.
 setInterval(function() {
+    if ( sendDroneCommands ) {
+        updateDrone();
+    }
+}, 30);
+
+function updateDrone() {
     droneControl.ref(droneRef);
     droneControl.pcmd(droneComm);
     droneControl.flush();
-}, 30);
+}
 
 
 function set_led(devicep, red, green, blue){
@@ -213,4 +259,34 @@ function set_led(devicep, red, green, blue){
     //{ 
         devicep.write([0x02,0x00,red,green,blue,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00]);
     //}
+}
+
+function cleanUp() {
+    // Stop reading Hid controllers
+    readingHid1 = false;
+    readingHid2 = false;
+
+    // Turn off lights
+    set_led(hid1,0x00,0x00,0x00);
+    set_led(hid1,0x00,0x00,0x00);
+
+    // Stop sending the drone automatic commands.
+    sendDroneCommands = false;
+
+    // Land
+    delete droneComm.up;
+    delete droneComm.down;
+    delete droneComm.front;
+    delete droneComm.back;
+    delete droneComm.clockwise;
+    delete droneComm.counterClockwise;
+    droneRef.fly = false;
+    updateDrone();
+
+    // After 5 seconds, set emergency mode, then exit.
+    setTimeout(function(){
+        droneRef.emergency = true;
+        updateDrone();
+        process.exit();
+    },3000);
 }
