@@ -34,6 +34,14 @@ setTimeout(function(){droneRef.emergency = false;},1000);
 
 function processHid1(data) {
 
+    //Number1 is green.
+    if (droneRef.fly == false){
+       set_led(hid1,0x00,0x99,0x00)
+    }else{
+        //Turn off if we're flying
+        set_led(hid1,0x00,0x00,0x00)
+    }
+
     // Start and select buttons - held together exits the app
     var startSelect = data[1];
     // Binary trigger sensors - 'PS (1)', 'Move (8)' and 'Trigger (16)'
@@ -106,6 +114,15 @@ function processHid1(data) {
 }
 
 function processHid2 (data) {
+
+
+    //We have to keep spamming this to keep the LED on.
+    if (droneRef.fly == false){
+       set_led(hid2,0x99,0x00,0x00)
+    }else{
+        //Turn off if we're flying
+        set_led(hid2,0x00,0x00,0x00)
+    }
 
     // Start and select buttons - held together exits the app
     var startSelect = data[1];
@@ -188,3 +205,12 @@ setInterval(function() {
     droneControl.pcmd(droneComm);
     droneControl.flush();
 }, 30);
+
+
+function set_led(devicep, red, green, blue){
+    //Set the big LED on the device.
+    //for (var ri=0;ri<10000;ri++)
+    //{ 
+        devicep.write([0x02,0x00,red,green,blue,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00]);
+    //}
+}
